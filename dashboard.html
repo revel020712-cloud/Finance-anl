@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Finance.anl — 금융권 주식 AI 분석 대시보드</title>
+<title>E(R).anl — 금융권 주식 AI 기대수익률 분석 대시보드</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -20,6 +20,7 @@
     --text-low:#94A0B2;
     --brand:#2F6FED;
     --brand-dim:#EAF1FE;
+    --mark-bg:#E5484D;
     --green:#22C55E;
     --up:#E5484D;
     --up-dim:#FDEBEC;
@@ -58,7 +59,7 @@
   /* ---- Header ---- */
   header{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--bg-1);flex-wrap:wrap;}
   .brand{display:flex;align-items:center;gap:9px;margin-right:8px;}
-  .brand .mark{width:30px;height:30px;border-radius:7px;background:var(--brand);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .brand .mark{width:30px;height:30px;border-radius:7px;background:var(--mark-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .brand .name{font-weight:700;font-size:16px;letter-spacing:0.1px;}
   .brand .name span{color:var(--brand);}
 
@@ -194,12 +195,12 @@
   <div class="brand">
     <div class="mark">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <rect x="3" y="13" width="4" height="8" rx="1" fill="#BFD7FF"/>
-        <rect x="10" y="9" width="4" height="12" rx="1" fill="#7FB0FF"/>
-        <rect x="17" y="4" width="4" height="17" rx="1" fill="#22C55E"/>
+        <rect x="3" y="13" width="4" height="8" rx="1" fill="rgba(255,255,255,0.45)"/>
+        <rect x="10" y="9" width="4" height="12" rx="1" fill="rgba(255,255,255,0.75)"/>
+        <rect x="17" y="4" width="4" height="17" rx="1" fill="#FFFFFF"/>
       </svg>
     </div>
-    <div class="name">Finance<span>.anl</span></div>
+    <div class="name">E<span>(R)</span>.anl</div>
   </div>
 
   <div class="search-wrap" id="searchWrap">
@@ -290,7 +291,7 @@
 
   <!-- News sentiment -->
   <div class="panel" style="grid-column:1;grid-row:2;">
-    <div class="panel-head"><h3>실시간 뉴스 &amp; 감성 분석</h3><span class="asof mono" style="font-size:10px;">자체 백엔드 경유 · Google News</span></div>
+    <div class="panel-head"><h3>실시간 뉴스 &amp; 감성 분석</h3><span class="asof mono" id="newsUpdatedAt" style="font-size:10px;">자체 백엔드 경유 · Google News</span></div>
     <div id="newsList"></div>
   </div>
 </main>
@@ -397,6 +398,7 @@ function statRow(label, value){
 
 /* ============ 메인 렌더 (종목/기간/차트타입 변경 시 호출) ============ */
 let renderRequestId = 0;
+let lastRenderedStock = null, lastRenderedRsi = null, lastRenderedBars = null;
 async function render(){
   const myId = ++renderRequestId;
   const stock = STOCKS[state.stockIdx];
@@ -463,6 +465,9 @@ async function render(){
     statRow('Beta', f.beta!=null ? f.beta.toFixed(2) : null);
 
   renderHeatmap(data.correlation);
+  lastRenderedStock = stock;
+  lastRenderedRsi = rsi;
+  lastRenderedBars = bars;
   loadNews(stock, rsi, bars);
 }
 
@@ -499,25 +504,31 @@ function renderHeatmap(correlation){
 
 /* ============ 뉴스: 자체 백엔드 경유 (CORS 문제 없음) ============ */
 let newsRequestId = 0;
-async function loadNews(stock, rsi, bars){
+async function loadNews(stock, rsi, bars, silent){
   const myId = ++newsRequestId;
   const newsListEl = document.getElementById('newsList');
-  newsListEl.innerHTML = `<div class="news-item" style="cursor:default;"><div class="news-txt"><h4>"${stock.name}" 관련 뉴스를 불러오는 중...</h4></div></div>`;
+  if(!silent){
+    newsListEl.innerHTML = `<div class="news-item" style="cursor:default;"><div class="news-txt"><h4>"${stock.name}" 관련 뉴스를 불러오는 중...</h4></div></div>`;
+  }
 
   let payload;
   try{
     payload = await apiGet(`/api/news/${encodeURIComponent(stock.name + ' 주가')}`);
   }catch(err){
     if(myId !== newsRequestId) return;
-    newsListEl.innerHTML = `<div class="news-empty">
-      뉴스를 불러오지 못했습니다: ${err.message}<br>
-      백엔드가 실행 중인지, 네트워크 연결을 확인해주세요.
-      <a href="https://news.google.com/search?q=${encodeURIComponent(stock.name+' 주가')}&hl=ko&gl=KR" target="_blank" rel="noopener noreferrer">Google 뉴스에서 직접 확인</a>
-    </div>`;
-    if(rsi !== undefined) renderAIReport(stock, rsi, bars || [], []);
+    if(!silent){
+      newsListEl.innerHTML = `<div class="news-empty">
+        뉴스를 불러오지 못했습니다: ${err.message}<br>
+        백엔드가 실행 중인지, 네트워크 연결을 확인해주세요.
+        <a href="https://news.google.com/search?q=${encodeURIComponent(stock.name+' 주가')}&hl=ko&gl=KR" target="_blank" rel="noopener noreferrer">Google 뉴스에서 직접 확인</a>
+      </div>`;
+    }
+    if(rsi !== undefined && !silent) renderAIReport(stock, rsi, bars || [], []);
     return;
   }
   if(myId !== newsRequestId) return;
+
+  document.getElementById('newsUpdatedAt').textContent = '마지막 갱신 ' + new Date().toLocaleTimeString('ko-KR');
 
   const news = payload.items || [];
   if(news.length === 0){
@@ -710,6 +721,16 @@ initControls();
 render();
 renderTape();
 window.addEventListener('resize', ()=>chart.applyOptions({}));
+
+// 화면을 계속 켜둔 상태에서도 뉴스가 그때그때 새로 올라온 기사로 갱신되도록,
+// 현재 보고 있는 종목의 뉴스를 3분마다 조용히(silent) 다시 조회합니다.
+// 차트/재무 데이터는 다시 불러오지 않으므로 화면이 깜빡이지 않습니다.
+const NEWS_AUTO_REFRESH_MS = 3 * 60 * 1000;
+setInterval(()=>{
+  if(lastRenderedStock){
+    loadNews(lastRenderedStock, lastRenderedRsi, lastRenderedBars, true);
+  }
+}, NEWS_AUTO_REFRESH_MS);
 </script>
 </body>
 </html>
