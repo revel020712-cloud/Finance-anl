@@ -15,6 +15,7 @@
 #   - 무료 소스이므로 실시간(호가 단위) 시세는 아니며, 통상 15~20분 지연 시세입니다.
 #   - 상용 서비스로 확장할 경우, 한국투자증권 Open API 등 국내 정식 라이선스 데이터 소스로 교체를 권장합니다.
 
+import logging
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -26,6 +27,9 @@ import yfinance as yf
 from curl_cffi import requests as curl_requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("finance-anl")
 
 app = FastAPI(title="Finance.anl API", version="1.0")
 
@@ -83,10 +87,13 @@ def resolve_ticker(code: str):
             t = yf.Ticker(symbol, session=_yf_session)
             try:
                 hist = t.history(period="5d")
-            except Exception:
+            except Exception as e:
+                logger.warning(f"[resolve_ticker] {symbol} attempt={attempt} raised: {type(e).__name__}: {e}")
                 hist = pd.DataFrame()
             if not hist.empty:
+                logger.info(f"[resolve_ticker] {symbol} succeeded, {len(hist)} rows")
                 return t, symbol
+            logger.warning(f"[resolve_ticker] {symbol} attempt={attempt} returned empty history")
             if attempt == 0:
                 time.sleep(0.8)
     return None, None
@@ -310,3 +317,19 @@ def get_news(query: str):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "time": datetime.utcnow().isoformat() + "Z"}
+
+
+@app.get("/api/debug/yahoo")
+def debug_yahoo():
+    """Yahoo Finance에 직접 원시 요청을 보내 응답 상태를 확인하는 진단용 엔드포인트.
+    404가 반복될 때 이 엔드포인트로 실제 차단 원인(429/999/타임아웃 등)을 확인할 수 있습니다."""
+    url = "https://query2.finance.yahoo.com/v8/finance/chart/105560.KS?range=5d&interval=1d"
+    try:
+        resp = _yf_session.get(url, timeout=10)
+        return {
+            "status_code": resp.status_code,
+            "headers_sample": {k: v for k, v in list(resp.headers.items())[:5]},
+            "body_preview": resp.text[:300],
+        }
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
