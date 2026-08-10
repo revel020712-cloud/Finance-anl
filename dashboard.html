@@ -9,37 +9,38 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg-0:#F5F7FA;
-    --bg-1:#FFFFFF;
-    --bg-2:#F0F2F6;
-    --bg-3:#E4E8EE;
-    --line:#E2E6EC;
-    --line-soft:#EDF0F4;
-    --text-hi:#12151C;
-    --text-mid:#5B6472;
-    --text-low:#94A0B2;
-    --brand:#2F6FED;
-    --brand-dim:#EAF1FE;
+    --bg-0:#0B0D14;
+    --bg-1:#12141D;
+    --bg-2:#171A26;
+    --bg-3:#20232F;
+    --line:rgba(255,255,255,0.09);
+    --line-soft:rgba(255,255,255,0.055);
+    --text-hi:#F2F4F8;
+    --text-mid:#9AA3B4;
+    --text-low:#5C6472;
+    --brand:#7C5CFF;
+    --brand-dim:rgba(124,92,255,0.15);
     --mark-bg:#E5484D;
-    --green:#22C55E;
-    --up:#E5484D;
-    --up-dim:#FDEBEC;
-    --down:#2F6FED;
-    --down-dim:#EAF1FE;
-    --warn:#B45309;
-    --warn-dim:#FEF3E2;
+    --up:#FB4368;
+    --up-dim:rgba(251,67,104,0.14);
+    --down:#3B9EFF;
+    --down-dim:rgba(59,158,255,0.14);
+    --price-pink:#FF3FA4;
+    --warn:#F5A524;
+    --warn-dim:rgba(245,165,36,0.12);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg-0);color:var(--text-hi);font-family:'IBM Plex Sans KR',sans-serif;-webkit-font-smoothing:antialiased;}
+  body{background-image:radial-gradient(circle at 15% 0%, rgba(124,92,255,0.07), transparent 40%),radial-gradient(circle at 85% 15%, rgba(255,63,164,0.05), transparent 35%);background-attachment:fixed;}
   .mono{font-family:'IBM Plex Mono',monospace;}
   ::-webkit-scrollbar{width:8px;height:8px;}
   ::-webkit-scrollbar-thumb{background:var(--bg-3);border-radius:4px;}
   ::-webkit-scrollbar-track{background:transparent;}
 
   /* ---- API 연결 배너 ---- */
-  .api-banner{background:var(--warn-dim);color:var(--warn);font-size:12px;text-align:center;padding:8px 16px;display:none;border-bottom:1px solid #F3D9A8;}
+  .api-banner{background:var(--warn-dim);color:var(--warn);font-size:12px;text-align:center;padding:8px 16px;display:none;border-bottom:1px solid rgba(245,165,36,0.3);}
   .api-banner.show{display:block;}
-  .api-banner code{background:rgba(0,0,0,0.06);padding:1px 5px;border-radius:4px;}
+  .api-banner code{background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:4px;}
 
   /* ---- Ticker tape ---- */
   .tape-wrap{background:var(--bg-1);border-bottom:1px solid var(--line);overflow:hidden;white-space:nowrap;position:relative;}
@@ -59,16 +60,17 @@
   /* ---- Header ---- */
   header{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--bg-1);flex-wrap:wrap;}
   .brand{display:flex;align-items:center;gap:9px;margin-right:8px;}
-  .brand .mark{width:30px;height:30px;border-radius:7px;background:var(--mark-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .brand .mark{width:30px;height:30px;border-radius:7px;background:var(--mark-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 16px rgba(229,72,77,0.45);}
   .brand .name{font-weight:700;font-size:16px;letter-spacing:0.1px;}
   .brand .name span{color:var(--brand);}
 
   .search-wrap{position:relative;display:flex;align-items:center;}
   input#stockSearch{background:var(--bg-2);border:1px solid var(--line);color:var(--text-hi);padding:8px 34px 8px 12px;border-radius:8px;font-size:13px;font-weight:500;font-family:inherit;min-width:240px;width:100%;}
-  input#stockSearch:focus{outline:none;border-color:var(--brand);background:var(--bg-1);}
+  input#stockSearch:focus{outline:none;border-color:var(--brand);background:var(--bg-1);box-shadow:0 0 0 3px var(--brand-dim);}
+  input#stockSearch::placeholder{color:var(--text-low);}
   #dropdownBtn{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--text-low);font-size:13px;cursor:pointer;padding:4px 6px;line-height:1;}
   #dropdownBtn:hover{color:var(--brand);}
-  .stock-dropdown{display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;min-width:280px;max-height:340px;overflow-y:auto;background:var(--bg-1);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 28px rgba(16,24,40,0.12);z-index:50;}
+  .stock-dropdown{display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;min-width:280px;max-height:340px;overflow-y:auto;background:var(--bg-1);border:1px solid var(--line);border-radius:10px;box-shadow:0 20px 40px rgba(0,0,0,0.5);z-index:50;}
   .stock-dropdown.open{display:block;}
   .stock-dropdown .opt{padding:10px 14px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;}
   .stock-dropdown .opt:hover, .stock-dropdown .opt.hi{background:var(--brand-dim);}
@@ -78,22 +80,22 @@
 
   .seg{display:flex;background:var(--bg-2);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px;}
   .seg button{background:transparent;border:none;color:var(--text-mid);font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:inherit;}
-  .seg button.active{background:var(--brand);color:#fff;}
+  .seg button.active{background:var(--brand);color:#fff;box-shadow:0 0 12px rgba(124,92,255,0.5);}
   .seg button:hover:not(.active){color:var(--text-hi);}
   header .spacer{flex:1;}
   .asof{font-size:11px;color:var(--text-low);}
   .universe-note{font-size:11px;color:var(--text-low);}
 
   /* ---- Layout ---- */
-  main{display:grid;grid-template-columns:2.1fr 1fr;grid-template-rows:auto auto;gap:16px;padding:20px 24px;max-width:1560px;margin:0 auto;}
-  .panel{background:var(--bg-1);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,0.03);}
+  main{display:grid;grid-template-columns:2.1fr 1fr;gap:16px;padding:20px 24px;max-width:1560px;margin:0 auto;}
+  .panel{background:var(--bg-1);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,0.03) inset, 0 16px 40px rgba(0,0,0,0.35);display:flex;flex-direction:column;}
   .panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line-soft);}
   .panel-head h3{margin:0;font-size:13px;font-weight:600;color:var(--text-mid);letter-spacing:0.3px;text-transform:uppercase;}
   .panel-body{padding:18px;}
 
   /* price header */
   .price-row{display:flex;align-items:baseline;gap:12px;padding:16px 18px 4px;flex-wrap:wrap;}
-  .price-row .cur{font-size:30px;font-weight:700;font-family:'IBM Plex Mono',monospace;}
+  .price-row .cur{font-size:30px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--price-pink);text-shadow:0 0 22px rgba(255,63,164,0.55),0 0 6px rgba(255,63,164,0.7);}
   .price-row .chg{font-size:15px;font-weight:600;font-family:'IBM Plex Mono',monospace;padding:3px 9px;border-radius:6px;}
   .price-row .stock-name{font-size:14px;color:var(--text-mid);margin-right:auto;}
   .up-badge{color:var(--up);background:var(--up-dim);}
@@ -107,18 +109,45 @@
   .indi:last-child{border-right:none;}
   .indi .lbl{font-size:11px;color:var(--text-low);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;display:flex;justify-content:space-between;}
   .rsi-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--down) 0%, var(--bg-3) 30%, var(--bg-3) 70%, var(--up) 100%);position:relative;}
-  .rsi-dot{position:absolute;top:-3px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--brand);transform:translateX(-50%);box-shadow:0 1px 3px rgba(0,0,0,0.15);}
+  .rsi-dot{position:absolute;top:-3px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--brand);transform:translateX(-50%);box-shadow:0 0 8px rgba(124,92,255,0.7);}
   .macd-bars{display:flex;align-items:flex-end;gap:3px;height:34px;}
   .macd-bars i{flex:1;background:var(--text-low);border-radius:1px;}
   .macd-bars i.pos{background:var(--up);}
   .macd-bars i.neg{background:var(--down);}
 
   /* stats panel */
+  .stats-panel .panel-body{flex:1;display:flex;flex-direction:column;}
   .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;}
   .stat{display:flex;flex-direction:column;gap:3px;padding-bottom:10px;border-bottom:1px solid var(--line-soft);}
   .stat .lbl{font-size:11px;color:var(--text-low);}
   .stat .val{font-size:14px;font-weight:600;font-family:'IBM Plex Mono',monospace;}
   .stat .val.na{color:var(--text-low);font-weight:500;font-size:12px;font-family:'IBM Plex Sans KR',sans-serif;}
+
+  /* side action buttons (구 3/4사분면 대체) */
+  .side-actions{margin-top:auto;padding-top:18px;display:flex;flex-direction:column;gap:12px;}
+  .action-btn{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line);cursor:pointer;color:var(--text-hi);font-family:inherit;text-align:left;transition:transform .15s, box-shadow .15s, border-color .15s;width:100%;}
+  .action-btn:hover{transform:translateY(-1px);}
+  .action-btn .icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+  .action-btn .txt{flex:1;min-width:0;}
+  .action-btn .txt .t1{font-size:13.5px;font-weight:700;}
+  .action-btn .txt .t2{font-size:11px;color:var(--text-low);margin-top:2px;}
+  .action-btn .arrow{color:var(--text-low);font-size:16px;flex-shrink:0;}
+  .action-btn.ai .icon{background:var(--brand-dim);color:var(--brand);}
+  .action-btn.ai:hover{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand), 0 0 28px rgba(124,92,255,0.3);}
+  .action-btn.news .icon{background:var(--down-dim);color:var(--down);}
+  .action-btn.news:hover{border-color:var(--down);box-shadow:0 0 0 1px var(--down), 0 0 28px rgba(59,158,255,0.3);}
+
+  /* ---- Modal (카드로 뜨는 AI 리포트 / 뉴스) ---- */
+  .modal-overlay{position:fixed;inset:0;background:rgba(4,5,9,0.68);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;z-index:200;padding:24px;}
+  .modal-overlay.open{display:flex;}
+  .modal-card{background:var(--bg-1);border:1px solid var(--line);border-radius:16px;max-width:640px;width:100%;max-height:86vh;overflow-y:auto;box-shadow:0 0 0 1px rgba(124,92,255,0.08), 0 30px 90px rgba(0,0,0,0.65);}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line-soft);position:sticky;top:0;background:var(--bg-1);z-index:2;}
+  .modal-head h3{margin:0;font-size:14px;font-weight:700;}
+  .modal-head .sub{font-size:10.5px;color:var(--text-low);font-weight:500;margin-left:8px;}
+  .modal-close{background:var(--bg-2);border:1px solid var(--line);color:var(--text-mid);width:28px;height:28px;border-radius:8px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .modal-close:hover{color:var(--text-hi);border-color:var(--brand);}
+  .modal-body{padding:20px;}
+  .modal-body.no-pad{padding:0;}
 
   /* AI report */
   .ai-score-wrap{display:flex;align-items:center;gap:18px;}
@@ -220,8 +249,8 @@
 </header>
 
 <main>
-  <!-- Chart panel -->
-  <div class="panel" style="grid-column:1;grid-row:1;">
+  <!-- 2사분면: 차트 (좌측, 전체 높이) -->
+  <div class="panel">
     <div class="price-row">
       <span class="stock-name" id="stockName">KB금융지주 (105560)</span>
       <span class="src-badge" id="srcBadge">Yahoo Finance 실시간 연동</span>
@@ -243,23 +272,47 @@
     </div>
   </div>
 
-  <!-- Financial stats -->
-  <div class="panel" style="grid-column:2;grid-row:1;">
+  <!-- 1사분면: 재무 통계 + 하단 여백에 AI/뉴스 버튼 (구 3,4사분면 대체) -->
+  <div class="panel stats-panel">
     <div class="panel-head"><h3>주요 재무 통계</h3></div>
     <div class="panel-body">
       <div class="stat-grid" id="statGrid"></div>
+
+      <div class="side-actions">
+        <button class="action-btn ai" id="btnAiReport" type="button">
+          <span class="icon">◆</span>
+          <span class="txt">
+            <div class="t1">AI 기대수익률 가이드라인</div>
+            <div class="t2">매수 타이밍 · 기대수익률 · 상관관계 히트맵</div>
+          </span>
+          <span class="arrow">›</span>
+        </button>
+        <button class="action-btn news" id="btnNews" type="button">
+          <span class="icon">▤</span>
+          <span class="txt">
+            <div class="t1">실시간 뉴스 &amp; 감성 분석</div>
+            <div class="t2">Google News 실시간 연동 · AI 감성 스코어</div>
+          </span>
+          <span class="arrow">›</span>
+        </button>
+      </div>
     </div>
   </div>
+</main>
 
-  <!-- AI report -->
-  <div class="panel" style="grid-column:2;grid-row:2;">
-    <div class="panel-head"><h3>AI 기대수익률 가이드라인</h3></div>
-    <div class="panel-body">
+<!-- AI 리포트 모달 -->
+<div class="modal-overlay" id="aiModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>AI 기대수익률 가이드라인</h3>
+      <button class="modal-close" data-close-modal type="button" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-body">
       <div class="ai-score-wrap">
         <div class="gauge">
           <svg viewBox="0 0 120 70">
-            <path d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="#E4E8EE" stroke-width="10" stroke-linecap="round"/>
-            <path id="gaugeArc" d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="#2F6FED" stroke-width="10" stroke-linecap="round" stroke-dasharray="0 999"/>
+            <path d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="#20232F" stroke-width="10" stroke-linecap="round"/>
+            <path id="gaugeArc" d="M10,65 A50,50 0 0,1 110,65" fill="none" stroke="#7C5CFF" stroke-width="10" stroke-linecap="round" stroke-dasharray="0 999"/>
           </svg>
           <div class="num mono" id="gaugeNum">—</div>
         </div>
@@ -282,19 +335,26 @@
         <p class="heat-intro">히트맵이란 여러 지표 쌍의 <b>상관계수(-1~+1)</b>를 색 농도로 보여주는 표입니다. <b>+1에 가까울수록</b> 두 지표가 같은 방향으로(빨강), <b>-1에 가까울수록</b> 반대 방향으로(파랑) 움직인다는 뜻입니다. 아래 값은 해당 종목의 실제 과거 시세로부터 직접 계산됩니다.</p>
         <div class="heat-wrap" id="heatWrap"></div>
         <div class="heat-legend" id="heatLegend">
-          <span class="sw"><span class="dot" style="background:#E5484D;"></span>양(+)의 상관관계</span>
-          <span class="sw"><span class="dot" style="background:#2F6FED;"></span>음(-)의 상관관계</span>
+          <span class="sw"><span class="dot" style="background:#FB4368;"></span>양(+)의 상관관계</span>
+          <span class="sw"><span class="dot" style="background:#3B9EFF;"></span>음(-)의 상관관계</span>
         </div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- News sentiment -->
-  <div class="panel" style="grid-column:1;grid-row:2;">
-    <div class="panel-head"><h3>실시간 뉴스 &amp; 감성 분석</h3><span class="asof mono" id="newsUpdatedAt" style="font-size:10px;">자체 백엔드 경유 · Google News</span></div>
-    <div id="newsList"></div>
+<!-- 뉴스 모달 -->
+<div class="modal-overlay" id="newsModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>실시간 뉴스 &amp; 감성 분석 <span class="sub mono" id="newsUpdatedAt">자체 백엔드 경유 · Google News</span></h3>
+      <button class="modal-close" data-close-modal type="button" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-body no-pad">
+      <div id="newsList"></div>
+    </div>
   </div>
-</main>
+</div>
 
 <footer>시세·재무·상관관계는 자체 FastAPI 백엔드가 Yahoo Finance에서 실시간 조회한 실제 데이터이며, 뉴스는 동일 백엔드가 Google News RSS를 실시간 조회한 실제 기사입니다. 감성 점수는 자체 키워드 사전 기반 규칙 분석(간이 버전)으로 산출됩니다. 무료 데이터 소스 특성상 시세는 실시간 호가가 아닌 지연 시세일 수 있으며, 어떤 데이터도 실제 투자 판단의 근거로 사용할 수 없습니다.</footer>
 
@@ -362,10 +422,10 @@ async function apiGet(path){
 let chart, series;
 function initChart(){
   chart = LightweightCharts.createChart(document.getElementById('chart'), {
-    layout:{background:{color:'transparent'}, textColor:'#5B6472', fontFamily:'IBM Plex Mono, monospace', fontSize:11},
-    grid:{vertLines:{color:'#EDF0F4'}, horzLines:{color:'#EDF0F4'}},
-    rightPriceScale:{borderColor:'#E2E6EC'},
-    timeScale:{borderColor:'#E2E6EC', timeVisible:true},
+    layout:{background:{color:'transparent'}, textColor:'#9AA3B4', fontFamily:'IBM Plex Mono, monospace', fontSize:11},
+    grid:{vertLines:{color:'rgba(255,255,255,0.045)'}, horzLines:{color:'rgba(255,255,255,0.045)'}},
+    rightPriceScale:{borderColor:'rgba(255,255,255,0.09)'},
+    timeScale:{borderColor:'rgba(255,255,255,0.09)', timeVisible:true},
     crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
     autoSize:true,
   });
@@ -375,11 +435,11 @@ function addSeries(){
   if(series) chart.removeSeries(series);
   if(state.chartType==='candle'){
     series = chart.addCandlestickSeries({
-      upColor:'#E5484D', downColor:'#2F6FED', borderVisible:false,
-      wickUpColor:'#E5484D', wickDownColor:'#2F6FED',
+      upColor:'#FB4368', downColor:'#3B9EFF', borderVisible:false,
+      wickUpColor:'#FB4368', wickDownColor:'#3B9EFF',
     });
   } else {
-    series = chart.addLineSeries({color:'#2F6FED', lineWidth:2});
+    series = chart.addLineSeries({color:'#7C5CFF', lineWidth:2});
   }
 }
 
@@ -495,7 +555,7 @@ function renderHeatmap(correlation){
     dims.forEach(colName=>{
       const v = lookup[rowName+'|'+colName] ?? 0;
       const intensity = Math.abs(v);
-      const hue = v>=0 ? '229,72,77' : '47,111,237';
+      const hue = v>=0 ? '251,67,104' : '59,158,255';
       cells += `<div class="heat-cell" style="background:rgba(${hue},${0.35+intensity*0.55})" title="${rowName} × ${colName} = ${v.toFixed(2)}">${v.toFixed(2)}</div>`;
     });
   });
@@ -563,7 +623,7 @@ function renderAIReport(stock, rsi, bars, news, avgSentOverride){
 
   const gaugePct = Math.max(0,Math.min(100,compositeScore))/100;
   document.getElementById('gaugeArc').setAttribute('stroke-dasharray', `${gaugePct*157} 999`);
-  document.getElementById('gaugeArc').setAttribute('stroke', compositeScore>=60?'#E5484D':compositeScore<=40?'#2F6FED':'#8A7345');
+  document.getElementById('gaugeArc').setAttribute('stroke', compositeScore>=60?'#FB4368':compositeScore<=40?'#3B9EFF':'#7C5CFF');
   document.getElementById('gaugeNum').textContent = (expReturn>=0?'+':'')+expReturn.toFixed(1)+'%';
 
   const tagEl = document.getElementById('aiTag');
@@ -627,6 +687,37 @@ async function renderTape(){
   } else {
     tapeEl.innerHTML = rows.join('') + rows.join('');
   }
+}
+
+/* ============ 모달 (AI 리포트 / 뉴스 카드) ============ */
+function openModal(id){
+  document.getElementById(id).classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal(id){
+  document.getElementById(id).classList.remove('open');
+  document.body.style.overflow = '';
+}
+function initModals(){
+  document.getElementById('btnAiReport').addEventListener('click', ()=>openModal('aiModal'));
+  document.getElementById('btnNews').addEventListener('click', ()=>openModal('newsModal'));
+
+  document.querySelectorAll('[data-close-modal]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const overlay = btn.closest('.modal-overlay');
+      closeModal(overlay.id);
+    });
+  });
+  document.querySelectorAll('.modal-overlay').forEach(overlay=>{
+    overlay.addEventListener('click', (e)=>{
+      if(e.target === overlay) closeModal(overlay.id);
+    });
+  });
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape'){
+      document.querySelectorAll('.modal-overlay.open').forEach(o=>closeModal(o.id));
+    }
+  });
 }
 
 /* ============ 컨트롤 초기화 ============ */
@@ -718,6 +809,7 @@ function initControls(){
 
 initChart();
 initControls();
+initModals();
 render();
 renderTape();
 window.addEventListener('resize', ()=>chart.applyOptions({}));
