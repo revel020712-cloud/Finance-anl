@@ -23,10 +23,19 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+from curl_cffi import requests as curl_requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Finance.anl API", version="1.0")
+
+# ---------------------------------------------------------------------------
+# Yahoo Finance는 2024년 이후 봇 차단을 강화해서, 클라우드 서버(Render 등)의 IP로 오는
+# 일반적인 requests 세션은 자주 차단하거나 빈 응답을 돌려줍니다. curl_cffi로 실제
+# 브라우저(Chrome)의 TLS 지문을 흉내 내면 이 차단을 대부분 우회할 수 있습니다.
+# (yfinance 공식 문서에서 권장하는 방법입니다.)
+# ---------------------------------------------------------------------------
+_yf_session = curl_requests.Session(impersonate="chrome124")
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,16 +75,20 @@ PERIOD_MAP = {
 
 
 def resolve_ticker(code: str):
-    """KOSPI(.KS)로 먼저 시도하고, 데이터가 없으면 KOSDAQ(.KQ)로 재시도합니다."""
+    """KOSPI(.KS)로 먼저 시도하고, 데이터가 없으면 KOSDAQ(.KQ)로 재시도합니다.
+    Yahoo Finance가 일시적으로 요청을 거부하는 경우를 대비해 짧게 한 번 재시도합니다."""
     for suffix in (".KS", ".KQ"):
         symbol = code + suffix
-        t = yf.Ticker(symbol)
-        try:
-            hist = t.history(period="5d")
-        except Exception:
-            continue
-        if not hist.empty:
-            return t, symbol
+        for attempt in range(2):
+            t = yf.Ticker(symbol, session=_yf_session)
+            try:
+                hist = t.history(period="5d")
+            except Exception:
+                hist = pd.DataFrame()
+            if not hist.empty:
+                return t, symbol
+            if attempt == 0:
+                time.sleep(0.8)
     return None, None
 
 
@@ -107,7 +120,10 @@ def get_stock(code: str, period: str = Query("1M")):
 
     ticker, resolved = resolve_ticker(code)
     if not ticker:
-        raise HTTPException(status_code=404, detail=f"'{code}' 종목의 실시간 시세를 찾을 수 없습니다.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{code}' 종목의 실시간 시세를 찾을 수 없습니다. Yahoo Finance가 일시적으로 요청을 거부했을 수 있습니다. 잠시 후 다시 시도해주세요.",
+        )
 
     yf_period, interval = PERIOD_MAP.get(period, ("1mo", "1d"))
     hist = ticker.history(period=yf_period, interval=interval)
