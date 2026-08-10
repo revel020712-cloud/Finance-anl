@@ -7,9 +7,10 @@
 #
 # 데이터 소스:
 #   - 시세/캔들/지표: Yahoo Finance Chart API를 직접 호출 (query2.finance.yahoo.com/v8/finance/chart)
-#     yfinance 라이브러리의 Ticker.history()가 커스텀 세션을 온전히 사용하지 못하는 문제가 있어
-#     curl_cffi 세션으로 이 API를 직접 호출하는 방식으로 우회했습니다.
-#   - 재무 지표(PER/배당수익률 등): yfinance의 Ticker.info를 best-effort로 시도 (실패해도 나머지 기능엔 영향 없음)
+#   - 재무 지표(PER/배당수익률 등): Yahoo Finance QuoteSummary API를 직접 호출 (v10/finance/quoteSummary)
+#     두 경우 모두 yfinance 라이브러리를 거치지 않습니다. yfinance의 Ticker.history()/.info가
+#     커스텀 세션을 온전히 사용하지 못하는 문제가 있어, curl_cffi 세션으로 Yahoo API를
+#     직접 호출하는 방식으로 완전히 대체했습니다.
 #   - 뉴스: Google News RSS (서버에서 호출하므로 브라우저 CORS 제약이 없음)
 #
 # 주의:
@@ -26,7 +27,6 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import requests
-import yfinance as yf
 from curl_cffi import requests as curl_requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,7 +40,6 @@ app = FastAPI(title="Finance.anl API", version="1.0")
 # Yahoo Finance는 2024년 이후 봇 차단을 강화해서, 클라우드 서버(Render 등)의 IP로 오는
 # 일반적인 requests 세션은 자주 차단하거나 빈 응답을 돌려줍니다. curl_cffi로 실제
 # 브라우저(Chrome)의 TLS 지문을 흉내 내면 이 차단을 대부분 우회할 수 있습니다.
-# (yfinance 공식 문서에서 권장하는 방법입니다.)
 # ---------------------------------------------------------------------------
 _yf_session = curl_requests.Session(impersonate="chrome124")
 
@@ -134,6 +133,81 @@ def resolve_symbol(code: str):
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# 재무 지표: Yahoo QuoteSummary API 직접 호출
+# 이 API는 종종 crumb(임시 인증 토큰)를 요구하므로, 먼저 쿠키를 확보하고 crumb을 발급받습니다.
+# ---------------------------------------------------------------------------
+_crumb_cache = {"crumb": None, "ts": 0}
+
+
+def get_crumb():
+    now = time.time()
+    if _crumb_cache["crumb"] and now - _crumb_cache["ts"] < 3600:
+        return _crumb_cache["crumb"]
+    try:
+        _yf_session.get("https://fc.yahoo.com", timeout=8)  # 쿠키 확보
+        resp = _yf_session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=8)
+        if resp.status_code == 200 and resp.text and "Too Many Requests" not in resp.text:
+            crumb = resp.text.strip()
+            if crumb:
+                _crumb_cache["crumb"] = crumb
+                _crumb_cache["ts"] = now
+                return crumb
+    except Exception as e:
+        logger.warning(f"[get_crumb] failed: {type(e).__name__}: {e}")
+    return None
+
+
+def _raw(d: dict, key: str):
+    v = (d or {}).get(key)
+    if isinstance(v, dict):
+        return v.get("raw")
+    return v
+
+
+def fetch_financials_direct(symbol: str):
+    """실패해도 예외를 던지지 않고 빈 dict를 반환합니다 (재무 정보는 best-effort)."""
+    url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+    params = {"modules": "summaryDetail,defaultKeyStatistics,financialData,price"}
+    crumb = get_crumb()
+    if crumb:
+        params["crumb"] = crumb
+    try:
+        resp = _yf_session.get(url, params=params, timeout=10)
+    except Exception as e:
+        logger.warning(f"[fetch_financials_direct] {symbol} raised: {type(e).__name__}: {e}")
+        return {}
+    if resp.status_code != 200:
+        logger.warning(f"[fetch_financials_direct] {symbol} status={resp.status_code}")
+        return {}
+    try:
+        data = resp.json()
+    except Exception:
+        return {}
+    results = ((data.get("quoteSummary") or {}).get("result")) or []
+    if not results:
+        logger.warning(f"[fetch_financials_direct] {symbol} no result, error={data.get('quoteSummary',{}).get('error')}")
+        return {}
+    r = results[0]
+    summary = r.get("summaryDetail") or {}
+    stats = r.get("defaultKeyStatistics") or {}
+    fin = r.get("financialData") or {}
+    price = r.get("price") or {}
+
+    dividend_yield = _raw(summary, "dividendYield")
+    return {
+        "marketCap": _raw(price, "marketCap") or _raw(summary, "marketCap"),
+        "dividendYield": (dividend_yield * 100) if dividend_yield else None,
+        "per": _raw(summary, "trailingPE"),
+        "eps": _raw(stats, "trailingEps"),
+        "netIncome": _raw(stats, "netIncomeToCommon"),
+        "revenue": _raw(fin, "totalRevenue"),
+        "sharesOutstanding": _raw(stats, "sharesOutstanding"),
+        "beta": _raw(stats, "beta"),
+        "name": _raw(price, "longName") or _raw(price, "shortName"),
+    }
+
+
 def calc_rsi(closes: pd.Series, period: int = 14) -> pd.Series:
     delta = closes.diff()
     gain = delta.clip(lower=0)
@@ -184,23 +258,19 @@ def get_stock(code: str, period: str = Query("1M")):
     rsi_series = calc_rsi(closes)
     macd_hist_series = calc_macd_hist(closes)
 
-    # 재무 지표(.info)는 yfinance를 best-effort로 시도합니다. 실패해도 시세/차트/상관관계는
-    # 이미 위에서 직접 호출로 확보했으므로 대시보드 핵심 기능에는 영향이 없습니다.
-    info = {}
-    try:
-        info = yf.Ticker(symbol, session=_yf_session).info or {}
-    except Exception as e:
-        logger.warning(f"[get_stock] {symbol} .info fetch failed: {type(e).__name__}: {e}")
+    # 재무 지표는 best-effort로 가져옵니다. 실패해도 시세/차트/RSI/MACD/상관관계는
+    # 이미 위에서 별도로 확보했으므로 대시보드 핵심 기능에는 영향이 없습니다.
+    fin_raw = fetch_financials_direct(symbol)
 
     financials = {
-        "marketCap": info.get("marketCap"),
-        "dividendYield": (info.get("dividendYield") * 100) if info.get("dividendYield") else None,
-        "per": info.get("trailingPE"),
-        "eps": info.get("trailingEps"),
-        "netIncome": info.get("netIncomeToCommon"),
-        "revenue": info.get("totalRevenue"),
-        "sharesOutstanding": info.get("sharesOutstanding"),
-        "beta": info.get("beta"),
+        "marketCap": fin_raw.get("marketCap"),
+        "dividendYield": fin_raw.get("dividendYield"),
+        "per": fin_raw.get("per"),
+        "eps": fin_raw.get("eps"),
+        "netIncome": fin_raw.get("netIncome"),
+        "revenue": fin_raw.get("revenue"),
+        "sharesOutstanding": fin_raw.get("sharesOutstanding"),
+        "beta": fin_raw.get("beta"),
     }
 
     # 상관관계 히트맵: 실제 과거 데이터에서 계산한 지표 간 상관계수 (모의 데이터 아님)
@@ -228,7 +298,7 @@ def get_stock(code: str, period: str = Query("1M")):
     result = {
         "code": code,
         "resolvedTicker": symbol,
-        "name": info.get("shortName") or info.get("longName") or chart.get("longName") or code,
+        "name": fin_raw.get("name") or chart.get("longName") or code,
         "candles": candles,
         "price": {
             "current": round(last_close, 2),
