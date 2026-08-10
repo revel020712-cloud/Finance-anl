@@ -273,6 +273,14 @@ def get_stock(code: str, period: str = Query("1M")):
         "beta": fin_raw.get("beta"),
     }
 
+    # Yahoo가 한국 종목에 trailingEps/trailingPE 필드를 채워주지 않는 경우가 있어,
+    # 이미 확보한 실제 데이터(순이익, 유통주식수, 시가총액)로 직접 계산해 채웁니다.
+    # EPS = 순이익 / 유통주식수, PER = 시가총액 / 순이익 (= 현재가 / EPS와 동일)
+    if financials["eps"] is None and financials["netIncome"] and financials["sharesOutstanding"]:
+        financials["eps"] = financials["netIncome"] / financials["sharesOutstanding"]
+    if financials["per"] is None and financials["marketCap"] and financials["netIncome"]:
+        financials["per"] = financials["marketCap"] / financials["netIncome"]
+
     # 상관관계 히트맵: 실제 과거 데이터에서 계산한 지표 간 상관계수 (모의 데이터 아님)
     returns = closes.pct_change()
     volatility = returns.rolling(5).std()
