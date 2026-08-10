@@ -140,21 +140,24 @@ def resolve_symbol(code: str):
 _crumb_cache = {"crumb": None, "ts": 0}
 
 
-def get_crumb():
+def get_crumb(force_refresh=False):
     now = time.time()
-    if _crumb_cache["crumb"] and now - _crumb_cache["ts"] < 3600:
+    if not force_refresh and _crumb_cache["crumb"] and now - _crumb_cache["ts"] < 3600:
         return _crumb_cache["crumb"]
     try:
         _yf_session.get("https://fc.yahoo.com", timeout=8)  # 쿠키 확보
         resp = _yf_session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=8)
+        logger.info(f"[get_crumb] getcrumb status={resp.status_code} body_len={len(resp.text or '')}")
         if resp.status_code == 200 and resp.text and "Too Many Requests" not in resp.text:
             crumb = resp.text.strip()
             if crumb:
                 _crumb_cache["crumb"] = crumb
                 _crumb_cache["ts"] = now
+                logger.info(f"[get_crumb] new crumb acquired (len={len(crumb)})")
                 return crumb
     except Exception as e:
         logger.warning(f"[get_crumb] failed: {type(e).__name__}: {e}")
+    _crumb_cache["crumb"] = None
     return None
 
 
@@ -165,20 +168,35 @@ def _raw(d: dict, key: str):
     return v
 
 
-def fetch_financials_direct(symbol: str):
-    """실패해도 예외를 던지지 않고 빈 dict를 반환합니다 (재무 정보는 best-effort)."""
+def _quote_summary_request(symbol: str, crumb):
     url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
     params = {"modules": "summaryDetail,defaultKeyStatistics,financialData,price"}
-    crumb = get_crumb()
     if crumb:
         params["crumb"] = crumb
+    return _yf_session.get(url, params=params, timeout=10)
+
+
+def fetch_financials_direct(symbol: str):
+    """실패해도 예외를 던지지 않고 빈 dict를 반환합니다 (재무 정보는 best-effort).
+    401(crumb 인증 실패)이 오면 crumb을 강제로 새로 발급받아 한 번 재시도합니다."""
+    crumb = get_crumb()
     try:
-        resp = _yf_session.get(url, params=params, timeout=10)
+        resp = _quote_summary_request(symbol, crumb)
     except Exception as e:
         logger.warning(f"[fetch_financials_direct] {symbol} raised: {type(e).__name__}: {e}")
         return {}
+
+    if resp.status_code == 401:
+        logger.warning(f"[fetch_financials_direct] {symbol} got 401, refreshing crumb and retrying once")
+        crumb = get_crumb(force_refresh=True)
+        try:
+            resp = _quote_summary_request(symbol, crumb)
+        except Exception as e:
+            logger.warning(f"[fetch_financials_direct] {symbol} retry raised: {type(e).__name__}: {e}")
+            return {}
+
     if resp.status_code != 200:
-        logger.warning(f"[fetch_financials_direct] {symbol} status={resp.status_code}")
+        logger.warning(f"[fetch_financials_direct] {symbol} status={resp.status_code} body={resp.text[:200]}")
         return {}
     try:
         data = resp.json()
