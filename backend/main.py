@@ -6,7 +6,10 @@
 #   uvicorn main:app --reload --port 8000
 #
 # 데이터 소스:
-#   - 시세/재무 지표: Yahoo Finance (yfinance) — 한국 종목은 코드 뒤에 KOSPI는 .KS, KOSDAQ은 .KQ 를 붙여 조회
+#   - 시세/캔들/지표: Yahoo Finance Chart API를 직접 호출 (query2.finance.yahoo.com/v8/finance/chart)
+#     yfinance 라이브러리의 Ticker.history()가 커스텀 세션을 온전히 사용하지 못하는 문제가 있어
+#     curl_cffi 세션으로 이 API를 직접 호출하는 방식으로 우회했습니다.
+#   - 재무 지표(PER/배당수익률 등): yfinance의 Ticker.info를 best-effort로 시도 (실패해도 나머지 기능엔 영향 없음)
 #   - 뉴스: Google News RSS (서버에서 호출하므로 브라우저 CORS 제약이 없음)
 #
 # 주의:
@@ -78,24 +81,56 @@ PERIOD_MAP = {
 }
 
 
-def resolve_ticker(code: str):
-    """KOSPI(.KS)로 먼저 시도하고, 데이터가 없으면 KOSDAQ(.KQ)로 재시도합니다.
-    Yahoo Finance가 일시적으로 요청을 거부하는 경우를 대비해 짧게 한 번 재시도합니다."""
+def fetch_chart_direct(symbol: str, yf_range: str, interval: str):
+    """yfinance 라이브러리를 거치지 않고 Yahoo Finance Chart API를 직접 호출합니다.
+    /api/debug/yahoo 에서 이 방식(curl_cffi 세션 + 이 엔드포인트)이 실제로 동작함을 확인했습니다.
+    yfinance의 Ticker.history()는 내부적으로 커스텀 세션을 온전히 사용하지 않는 경우가 있어
+    이 방식이 더 안정적입니다."""
+    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
+    try:
+        resp = _yf_session.get(url, params={"range": yf_range, "interval": interval}, timeout=12)
+    except Exception as e:
+        logger.warning(f"[fetch_chart_direct] {symbol} request raised: {type(e).__name__}: {e}")
+        return None
+    if resp.status_code != 200:
+        logger.warning(f"[fetch_chart_direct] {symbol} status={resp.status_code}")
+        return None
+    try:
+        data = resp.json()
+    except Exception:
+        return None
+    result = (data.get("chart") or {}).get("result")
+    if not result:
+        logger.warning(f"[fetch_chart_direct] {symbol} no result, error={data.get('chart',{}).get('error')}")
+        return None
+    r = result[0]
+    timestamps = r.get("timestamp") or []
+    quote = ((r.get("indicators") or {}).get("quote") or [{}])[0]
+    opens, highs, lows, closes, vols = (
+        quote.get("open", []), quote.get("high", []), quote.get("low", []),
+        quote.get("close", []), quote.get("volume", []),
+    )
+    candles = []
+    for i, ts in enumerate(timestamps):
+        o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+        if o is None or h is None or l is None or c is None:
+            continue
+        v = vols[i] if i < len(vols) and vols[i] is not None else 0
+        candles.append({
+            "time": int(ts), "open": round(o, 2), "high": round(h, 2),
+            "low": round(l, 2), "close": round(c, 2), "volume": int(v),
+        })
+    meta = r.get("meta") or {}
+    return {"candles": candles, "currency": meta.get("currency"), "longName": meta.get("longName") or meta.get("shortName")}
+
+
+def resolve_symbol(code: str):
+    """KOSPI(.KS)로 먼저 시도하고, 데이터가 없으면 KOSDAQ(.KQ)로 재시도합니다."""
     for suffix in (".KS", ".KQ"):
         symbol = code + suffix
-        for attempt in range(2):
-            t = yf.Ticker(symbol, session=_yf_session)
-            try:
-                hist = t.history(period="5d")
-            except Exception as e:
-                logger.warning(f"[resolve_ticker] {symbol} attempt={attempt} raised: {type(e).__name__}: {e}")
-                hist = pd.DataFrame()
-            if not hist.empty:
-                logger.info(f"[resolve_ticker] {symbol} succeeded, {len(hist)} rows")
-                return t, symbol
-            logger.warning(f"[resolve_ticker] {symbol} attempt={attempt} returned empty history")
-            if attempt == 0:
-                time.sleep(0.8)
+        chart = fetch_chart_direct(symbol, "5d", "1d")
+        if chart and chart["candles"]:
+            return symbol, chart
     return None, None
 
 
@@ -125,31 +160,22 @@ def get_stock(code: str, period: str = Query("1M")):
     if cached:
         return cached
 
-    ticker, resolved = resolve_ticker(code)
-    if not ticker:
+    symbol, _ = resolve_symbol(code)
+    if not symbol:
         raise HTTPException(
             status_code=404,
-            detail=f"'{code}' 종목의 실시간 시세를 찾을 수 없습니다. Yahoo Finance가 일시적으로 요청을 거부했을 수 있습니다. 잠시 후 다시 시도해주세요.",
+            detail=f"'{code}' 종목의 실시간 시세를 찾을 수 없습니다. 잠시 후 다시 시도해주세요.",
         )
 
-    yf_period, interval = PERIOD_MAP.get(period, ("1mo", "1d"))
-    hist = ticker.history(period=yf_period, interval=interval)
-    if hist.empty:
+    yf_range, interval = PERIOD_MAP.get(period, ("1mo", "1d"))
+    chart = fetch_chart_direct(symbol, yf_range, interval)
+    if not chart or not chart["candles"]:
         raise HTTPException(status_code=404, detail="해당 기간의 시세 데이터가 없습니다.")
 
-    candles = [
-        {
-            "time": int(idx.timestamp()),
-            "open": round(float(row.Open), 2),
-            "high": round(float(row.High), 2),
-            "low": round(float(row.Low), 2),
-            "close": round(float(row.Close), 2),
-            "volume": int(row.Volume) if not np.isnan(row.Volume) else 0,
-        }
-        for idx, row in hist.iterrows()
-    ]
+    candles = chart["candles"]
+    closes = pd.Series([c["close"] for c in candles])
+    volumes = pd.Series([c["volume"] for c in candles])
 
-    closes = hist["Close"]
     last_close = float(closes.iloc[-1])
     prev_close = float(closes.iloc[-2]) if len(closes) > 1 else last_close
     change = last_close - prev_close
@@ -158,10 +184,13 @@ def get_stock(code: str, period: str = Query("1M")):
     rsi_series = calc_rsi(closes)
     macd_hist_series = calc_macd_hist(closes)
 
+    # 재무 지표(.info)는 yfinance를 best-effort로 시도합니다. 실패해도 시세/차트/상관관계는
+    # 이미 위에서 직접 호출로 확보했으므로 대시보드 핵심 기능에는 영향이 없습니다.
+    info = {}
     try:
-        info = ticker.info or {}
-    except Exception:
-        info = {}
+        info = yf.Ticker(symbol, session=_yf_session).info or {}
+    except Exception as e:
+        logger.warning(f"[get_stock] {symbol} .info fetch failed: {type(e).__name__}: {e}")
 
     financials = {
         "marketCap": info.get("marketCap"),
@@ -176,14 +205,13 @@ def get_stock(code: str, period: str = Query("1M")):
 
     # 상관관계 히트맵: 실제 과거 데이터에서 계산한 지표 간 상관계수 (모의 데이터 아님)
     returns = closes.pct_change()
-    volume = hist["Volume"]
     volatility = returns.rolling(5).std()
     ind_df = pd.DataFrame(
         {
             "수익률": returns,
             "RSI": rsi_series,
             "MACD": macd_hist_series,
-            "거래량": volume,
+            "거래량": volumes,
             "변동성": volatility,
         }
     ).dropna()
@@ -199,8 +227,8 @@ def get_stock(code: str, period: str = Query("1M")):
 
     result = {
         "code": code,
-        "resolvedTicker": resolved,
-        "name": info.get("shortName") or info.get("longName") or code,
+        "resolvedTicker": symbol,
+        "name": info.get("shortName") or info.get("longName") or chart.get("longName") or code,
         "candles": candles,
         "price": {
             "current": round(last_close, 2),
