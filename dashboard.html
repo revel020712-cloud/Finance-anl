@@ -303,7 +303,7 @@
    로컬 실행: uvicorn main:app --reload --port 8000  →  기본값 그대로 사용
    배포 후:   'https://your-app.onrender.com' 처럼 실제 배포 주소로 교체
 ===================================================================== */
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'https://finance-anl-backend.onrender.com';
 
 /* ============ 종목 유니버스: 국내 금융 섹터 실존 종목 (TradingView 금융 섹터 스크리너 기준) ============ */
 const STOCKS = [
@@ -416,7 +416,7 @@ async function render(){
   }catch(err){
     if(myId !== renderRequestId) return;
     chartMsg.innerHTML = `백엔드 API에 연결할 수 없습니다.<br><span style="color:var(--text-low);font-size:11.5px;">${err.message}</span>`;
-    showApiBanner(`⚠ 백엔드(<code>${API_BASE}</code>)에 연결할 수 없습니다. <code>backend/</code> 폴더에서 <code>uvicorn main:app --reload --port 8000</code>을 실행한 뒤 새로고침하세요. 자세한 안내는 backend/README.md를 참고하세요.`);
+    showApiBanner(`⚠ 백엔드(<code>${API_BASE}</code>)에 연결할 수 없습니다. Render 무료 플랜은 15분간 요청이 없으면 슬립 모드로 들어가 첫 응답이 30초~1분 정도 걸릴 수 있습니다. 잠시 후 새로고침해보세요.`);
     document.getElementById('statGrid').innerHTML = statRow('시가총액',null)+statRow('배당수익률',null)+statRow('PER',null)+statRow('기본 EPS',null)+statRow('순이익(TTM)',null)+statRow('매출(TTM)',null)+statRow('유통주식수',null)+statRow('Beta',null);
     loadNews(stock); // 뉴스는 별도 엔드포인트이므로 독립적으로 시도
     renderAIReport(stock, 50, [], null);
