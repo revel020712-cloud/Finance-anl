@@ -119,9 +119,17 @@
   .stats-panel .panel-body{flex:1;display:flex;flex-direction:column;}
   .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;}
   .stat{display:flex;flex-direction:column;gap:3px;padding-bottom:10px;border-bottom:1px solid var(--line-soft);}
-  .stat .lbl{font-size:11px;color:var(--text-low);}
+  .stat .lbl{font-size:11px;color:var(--text-low);display:flex;align-items:center;gap:5px;}
   .stat .val{font-size:14px;font-weight:600;font-family:'IBM Plex Mono',monospace;}
   .stat .val.na{color:var(--text-low);font-weight:500;font-size:12px;font-family:'IBM Plex Sans KR',sans-serif;}
+
+  /* 용어 설명 (?) 버튼 + 팝업 카드 */
+  .info-btn{width:15px;height:15px;border-radius:50%;border:1px solid var(--line);background:var(--bg-3);color:var(--text-low);font-size:9.5px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex-shrink:0;font-family:inherit;}
+  .info-btn:hover{color:var(--brand);border-color:var(--brand);}
+  .stat-info-popover{position:fixed;width:260px;background:var(--bg-1);border:1px solid var(--line);border-radius:12px;box-shadow:0 0 0 1px rgba(124,92,255,0.08), 0 24px 60px rgba(0,0,0,0.55);padding:14px 16px;font-size:12px;line-height:1.65;color:var(--text-mid);z-index:300;display:none;}
+  .stat-info-popover.open{display:block;}
+  .stat-info-popover .ttl{font-size:13px;font-weight:700;color:var(--text-hi);margin-bottom:6px;}
+  .stat-info-popover .formula{margin-top:9px;padding:7px 9px;background:var(--bg-2);border-radius:7px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--brand);}
 
   /* side action buttons (구 3/4사분면 대체) */
   .side-actions{margin-top:auto;padding-top:18px;display:flex;flex-direction:column;gap:12px;}
@@ -303,6 +311,12 @@
   </div>
 </main>
 
+<!-- 재무 용어 설명 팝업 카드 -->
+<div class="stat-info-popover" id="statInfoPopover">
+  <div class="ttl" id="statInfoTitle"></div>
+  <div id="statInfoDesc"></div>
+</div>
+
 <!-- AI 리포트 모달 -->
 <div class="modal-overlay" id="aiModal">
   <div class="modal-card">
@@ -359,7 +373,7 @@
   </div>
 </div>
 
-<footer>시세·재무·상관관계는 자체 FastAPI 백엔드가 Yahoo Finance에서 실시간 조회한 실제 데이터이며, 뉴스는 동일 백엔드가 Google News RSS를 실시간 조회한 실제 기사입니다. 감성 점수는 자체 키워드 사전 기반 규칙 분석(간이 버전)으로 산출됩니다. 무료 데이터 소스 특성상 시세는 실시간 호가가 아닌 지연 시세일 수 있으며, 어떤 데이터도 실제 투자 판단의 근거로 사용할 수 없습니다.</footer>
+<footer>본 사이트는 통계 분석과 시장 상황을 참고하여 이용자 여러분의 투자 판단에 도움이 될 수 있는 참고 자료를 제공할 목적으로 개설되었습니다. 시세·재무·상관관계는 자체 FastAPI 백엔드가 Yahoo Finance에서 실시간 조회한 실제 데이터이며, 뉴스는 동일 백엔드가 Google News RSS를 실시간 조회한 실제 기사입니다. 감성 점수는 자체 키워드 사전 기반 규칙 분석(간이 버전)으로 산출됩니다. 무료 데이터 소스 특성상 시세는 실시간 호가가 아닌 지연 시세일 수 있습니다. 투자의 최종 판단과 책임은 정보 이용자 본인에게 있음을 인지하시고, 건전한 재무생활을 영위하시길 바랍니다.</footer>
 
 <script>
 /* =====================================================================
@@ -446,17 +460,93 @@ function addSeries(){
   }
 }
 
+/* ============ 재무 용어 설명 사전 ============ */
+const STAT_INFO = {
+  marketCap: {
+    title: '시가총액',
+    desc: '상장된 주식 전체의 시장 가치를 뜻합니다. 현재 주가에 발행주식수를 곱해 계산하며, 회사의 전체 규모를 가늠하는 대표적인 지표예요.',
+    formula: '시가총액 = 현재 주가 × 발행주식수',
+  },
+  dividendYield: {
+    title: '배당수익률',
+    desc: '주가 대비 연간 배당금의 비율입니다. 은행 이자처럼, 주식을 보유했을 때 배당으로 얻을 수 있는 수익률을 뜻해요.',
+    formula: '배당수익률(%) = (연간 주당배당금 ÷ 현재 주가) × 100',
+  },
+  per: {
+    title: 'PER (주가수익비율)',
+    desc: '현재 주가가 주당순이익(EPS)의 몇 배인지 나타내는 지표입니다. 낮을수록 저평가, 높을수록 고평가로 해석되는 경우가 많지만, 적정 수준은 업종마다 크게 달라요.',
+    formula: 'PER = 현재 주가 ÷ EPS(주당순이익)',
+  },
+  eps: {
+    title: '기본 EPS (주당순이익)',
+    desc: '회사가 벌어들인 순이익을 유통주식수로 나눈 값입니다. 주식 한 주가 벌어들인 이익이 얼마인지 보여주는 수익성 지표예요.',
+    formula: 'EPS = 당기순이익 ÷ 유통주식수',
+  },
+  netIncome: {
+    title: '순이익 (TTM)',
+    desc: '최근 12개월(Trailing Twelve Months) 동안 회사가 벌어들인 세후 순이익의 합계입니다. 최근 4개 분기 실적을 더해 가장 최신 1년치 실적을 반영해요.',
+  },
+  revenue: {
+    title: '매출 (TTM)',
+    desc: '최근 12개월 동안 발생한 총 매출액입니다. 비용을 차감하기 전, 회사가 판매를 통해 벌어들인 전체 금액을 의미해요.',
+  },
+  shares: {
+    title: '유통주식수',
+    desc: '현재 시장에서 실제로 거래 가능한 발행주식의 총 수량입니다. 시가총액과 EPS를 계산할 때 기준이 되는 값이에요.',
+  },
+  beta: {
+    title: 'Beta (베타)',
+    desc: '시장 전체(코스피 등) 대비 이 종목의 주가가 얼마나 크게 움직이는지 나타내는 지표입니다. 1보다 크면 시장보다 변동성이 크고, 1보다 작으면 시장보다 안정적으로 움직인다는 뜻이에요.',
+  },
+};
+
+function initStatInfoPopover(){
+  const pop = document.getElementById('statInfoPopover');
+  const titleEl = document.getElementById('statInfoTitle');
+  const descEl = document.getElementById('statInfoDesc');
+
+  document.getElementById('statGrid').addEventListener('click', e=>{
+    const btn = e.target.closest('.info-btn');
+    if(!btn) return;
+    e.stopPropagation();
+    const info = STAT_INFO[btn.dataset.stat];
+    if(!info) return;
+    titleEl.textContent = info.title;
+    descEl.innerHTML = info.desc + (info.formula ? `<div class="formula">${info.formula}</div>` : '');
+
+    const rect = btn.getBoundingClientRect();
+    const popWidth = 260;
+    let left = rect.left;
+    if(left + popWidth > window.innerWidth - 12) left = window.innerWidth - popWidth - 12;
+    if(left < 12) left = 12;
+    pop.style.left = left + 'px';
+    pop.style.top = (rect.bottom + 8) + 'px';
+    pop.classList.add('open');
+  });
+
+  document.addEventListener('click', e=>{
+    if(pop.classList.contains('open') && !pop.contains(e.target) && !e.target.closest('.info-btn')){
+      pop.classList.remove('open');
+    }
+  });
+  document.addEventListener('keydown', e=>{
+    if(e.key === 'Escape') pop.classList.remove('open');
+  });
+  window.addEventListener('resize', ()=> pop.classList.remove('open'));
+}
+
 function fmtKRW(n){
   if(n===null || n===undefined) return null;
   if(Math.abs(n) >= 1e12) return (n/1e12).toFixed(2)+'조원';
   if(Math.abs(n) >= 1e8) return Math.round(n/1e8).toLocaleString()+'억원';
   return Math.round(n).toLocaleString()+'원';
 }
-function statRow(label, value){
+function statRow(label, value, key){
+  const infoBtn = key ? `<button class="info-btn" type="button" data-stat="${key}" aria-label="${label} 설명 보기">?</button>` : '';
   if(value === null || value === undefined || value === ''){
-    return `<div class="stat"><span class="lbl">${label}</span><span class="val na">데이터 없음</span></div>`;
+    return `<div class="stat"><span class="lbl">${label}${infoBtn}</span><span class="val na">데이터 없음</span></div>`;
   }
-  return `<div class="stat"><span class="lbl">${label}</span><span class="val">${value}</span></div>`;
+  return `<div class="stat"><span class="lbl">${label}${infoBtn}</span><span class="val">${value}</span></div>`;
 }
 
 /* ============ 메인 렌더 (종목/기간/차트타입 변경 시 호출) ============ */
@@ -482,7 +572,7 @@ async function render(){
     if(myId !== renderRequestId) return;
     chartMsg.innerHTML = `백엔드 API에 연결할 수 없습니다.<br><span style="color:var(--text-low);font-size:11.5px;">${err.message}</span>`;
     showApiBanner(`⚠ 백엔드(<code>${API_BASE}</code>)에 연결할 수 없습니다. Render 무료 플랜은 15분간 요청이 없으면 슬립 모드로 들어가 첫 응답이 30초~1분 정도 걸릴 수 있습니다. 잠시 후 새로고침해보세요.`);
-    document.getElementById('statGrid').innerHTML = statRow('시가총액',null)+statRow('배당수익률',null)+statRow('PER',null)+statRow('기본 EPS',null)+statRow('순이익(TTM)',null)+statRow('매출(TTM)',null)+statRow('유통주식수',null)+statRow('Beta',null);
+    document.getElementById('statGrid').innerHTML = statRow('시가총액',null,'marketCap')+statRow('배당수익률',null,'dividendYield')+statRow('PER',null,'per')+statRow('기본 EPS',null,'eps')+statRow('순이익(TTM)',null,'netIncome')+statRow('매출(TTM)',null,'revenue')+statRow('유통주식수',null,'shares')+statRow('Beta',null,'beta');
     loadNews(stock); // 뉴스는 별도 엔드포인트이므로 독립적으로 시도
     renderAIReport(stock, 50, [], null);
     return;
@@ -518,14 +608,14 @@ async function render(){
 
   const f = data.financials || {};
   document.getElementById('statGrid').innerHTML =
-    statRow('시가총액', fmtKRW(f.marketCap)) +
-    statRow('배당수익률', f.dividendYield!=null ? f.dividendYield.toFixed(2)+'%' : null) +
-    statRow('PER', f.per!=null ? f.per.toFixed(2)+'배' : null) +
-    statRow('기본 EPS', f.eps!=null ? Math.round(f.eps).toLocaleString()+'원' : null) +
-    statRow('순이익(TTM)', fmtKRW(f.netIncome)) +
-    statRow('매출(TTM)', fmtKRW(f.revenue)) +
-    statRow('유통주식수', f.sharesOutstanding!=null ? Math.round(f.sharesOutstanding/1e6).toLocaleString()+'백만주' : null) +
-    statRow('Beta', f.beta!=null ? f.beta.toFixed(2) : null);
+    statRow('시가총액', fmtKRW(f.marketCap), 'marketCap') +
+    statRow('배당수익률', f.dividendYield!=null ? f.dividendYield.toFixed(2)+'%' : null, 'dividendYield') +
+    statRow('PER', f.per!=null ? f.per.toFixed(2)+'배' : null, 'per') +
+    statRow('기본 EPS', f.eps!=null ? Math.round(f.eps).toLocaleString()+'원' : null, 'eps') +
+    statRow('순이익(TTM)', fmtKRW(f.netIncome), 'netIncome') +
+    statRow('매출(TTM)', fmtKRW(f.revenue), 'revenue') +
+    statRow('유통주식수', f.sharesOutstanding!=null ? Math.round(f.sharesOutstanding/1e6).toLocaleString()+'백만주' : null, 'shares') +
+    statRow('Beta', f.beta!=null ? f.beta.toFixed(2) : null, 'beta');
 
   renderHeatmap(data.correlation);
   lastRenderedStock = stock;
@@ -814,6 +904,7 @@ function initControls(){
 initChart();
 initControls();
 initModals();
+initStatInfoPopover();
 render();
 renderTape();
 window.addEventListener('resize', ()=>chart.applyOptions({}));
