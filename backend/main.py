@@ -55,11 +55,16 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 _cache: dict = {}
 CACHE_TTL_SECONDS = 60
+FIN_CACHE_TTL_SECONDS = 6 * 60 * 60  # 재무 지표는 6시간 캐시 (Yahoo 요청 빈도를 크게 줄임)
 
 
 def cache_get(key: str):
+    return cache_get_ttl(key, CACHE_TTL_SECONDS)
+
+
+def cache_get_ttl(key: str, ttl_seconds: float):
     entry = _cache.get(key)
-    if entry and time.time() - entry[0] < CACHE_TTL_SECONDS:
+    if entry and time.time() - entry[0] < ttl_seconds:
         return entry[1]
     return None
 
@@ -137,13 +142,18 @@ def resolve_symbol(code: str):
 # 재무 지표: Yahoo QuoteSummary API 직접 호출
 # 이 API는 종종 crumb(임시 인증 토큰)를 요구하므로, 먼저 쿠키를 확보하고 crumb을 발급받습니다.
 # ---------------------------------------------------------------------------
-_crumb_cache = {"crumb": None, "ts": 0}
+_crumb_cache = {"crumb": None, "ts": 0, "retry_after": 0}
 
 
 def get_crumb(force_refresh=False):
     now = time.time()
     if not force_refresh and _crumb_cache["crumb"] and now - _crumb_cache["ts"] < 3600:
         return _crumb_cache["crumb"]
+    # Yahoo가 crumb 발급 자체를 거부(429 등)한 직후에는 잠시 재시도를 쉬어서
+    # 반복 요청으로 차단이 더 길어지는 것을 방지합니다.
+    if now < _crumb_cache["retry_after"]:
+        logger.info(f"[get_crumb] backing off until {_crumb_cache['retry_after']:.0f} (now={now:.0f})")
+        return None
     try:
         _yf_session.get("https://fc.yahoo.com", timeout=8)  # 쿠키 확보
         resp = _yf_session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=8)
@@ -153,10 +163,15 @@ def get_crumb(force_refresh=False):
             if crumb:
                 _crumb_cache["crumb"] = crumb
                 _crumb_cache["ts"] = now
+                _crumb_cache["retry_after"] = 0
                 logger.info(f"[get_crumb] new crumb acquired (len={len(crumb)})")
                 return crumb
+        if resp.status_code == 429:
+            _crumb_cache["retry_after"] = now + 600  # 10분간 재시도 중단
+            logger.warning("[get_crumb] 429 from Yahoo, backing off for 10 minutes")
     except Exception as e:
         logger.warning(f"[get_crumb] failed: {type(e).__name__}: {e}")
+        _crumb_cache["retry_after"] = now + 120
     _crumb_cache["crumb"] = None
     return None
 
@@ -278,7 +293,14 @@ def get_stock(code: str, period: str = Query("1M")):
 
     # 재무 지표는 best-effort로 가져옵니다. 실패해도 시세/차트/RSI/MACD/상관관계는
     # 이미 위에서 별도로 확보했으므로 대시보드 핵심 기능에는 영향이 없습니다.
-    fin_raw = fetch_financials_direct(symbol)
+    # PER/EPS/시가총액 등은 분·시간 단위로 바뀌는 값이 아니므로, 기본 시세 캐시(60초)보다
+    # 훨씬 긴 6시간 캐시를 별도로 두어 Yahoo에 crumb/재무 요청을 보내는 빈도 자체를 줄입니다.
+    fin_cache_key = f"financials:{symbol}"
+    fin_raw = cache_get_ttl(fin_cache_key, FIN_CACHE_TTL_SECONDS)
+    if fin_raw is None:
+        fin_raw = fetch_financials_direct(symbol)
+        if fin_raw:  # 완전히 실패(빈 dict)한 경우는 캐시하지 않고 다음 요청에서 재시도
+            cache_set(fin_cache_key, fin_raw)
 
     financials = {
         "marketCap": fin_raw.get("marketCap"),
